@@ -11,17 +11,19 @@
  */
 package org.locationtech.jts.noding;
 
+import org.locationtech.jts.geom.Coordinate;
+import org.locationtech.jts.geom.CoordinateXY;
+import org.locationtech.jts.geom.Envelope;
+import org.locationtech.jts.index.SegmentSequencePackedRtree;
+import org.locationtech.jts.index.SpatialIndex;
+import org.locationtech.jts.index.chain.MonotoneChain;
+import org.locationtech.jts.index.chain.MonotoneChainOverlapAction;
+import org.locationtech.jts.index.hprtree.HPRtree;
+
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Iterator;
 import java.util.List;
-
-import org.locationtech.jts.geom.Envelope;
-import org.locationtech.jts.index.SpatialIndex;
-import org.locationtech.jts.index.chain.MonotoneChain;
-import org.locationtech.jts.index.chain.MonotoneChainBuilder;
-import org.locationtech.jts.index.chain.MonotoneChainOverlapAction;
-import org.locationtech.jts.index.hprtree.HPRtree;
 
 /**
  * Nodes a set of {@link SegmentString}s using a index based
@@ -39,12 +41,10 @@ import org.locationtech.jts.index.hprtree.HPRtree;
 public class MCIndexNoder
     extends SinglePassNoder
 {
-  private List monoChains = new ArrayList();
-  private SpatialIndex index= new HPRtree();
+  private final List<SegmentString> segmentStrings = new ArrayList<>();
+  private final SpatialIndex<SegmentSequencePackedRtree> index = new HPRtree<>();
   private int idCounter = 0;
   private Collection nodedSegStrings;
-  // statistics
-  private int nOverlaps = 0;
   private double overlapTolerance = 0;
 
   public MCIndexNoder()
@@ -69,7 +69,7 @@ public class MCIndexNoder
     this.overlapTolerance = overlapTolerance;
   }
 
-  public List getMonotoneChains() { return monoChains; }
+  public List getMonotoneChains() { return segmentStrings; }
 
   public SpatialIndex getIndex() { return index; }
 
@@ -80,67 +80,112 @@ public class MCIndexNoder
 
   public void computeNodes(Collection inputSegStrings)
   {
+//    System.err.println("computeNodes(" + inputSegStrings + ")");
     this.nodedSegStrings = inputSegStrings;
-    for (Iterator i = inputSegStrings.iterator(); i.hasNext(); ) {
-      add((SegmentString) i.next());
+    for (Object inputSegString : inputSegStrings) {
+      SegmentString segStr = (SegmentString) inputSegString;
+      Envelope env = new Envelope();
+      for (Coordinate coord : segStr.getCoordinates()) {
+        env.expandToInclude(coord);
+      }
+      env.expandBy(overlapTolerance);
+      index.insert(env, new SegmentSequencePackedRtree(segStr, segmentStrings.size()));
+      segmentStrings.add(segStr);
     }
-    intersectChains();
+    Envelope envelope = new Envelope();
+    int id = 0;
+    for (SegmentString queryChain : segmentStrings) {
+//      System.err.println("  queryChain=" + queryChain);
+      for (int node1 = 0; node1 < queryChain.size() - 1; node1++) {
+//        System.err.println("    node1=" + node1 + " " + new CoordinateXY(queryChain.getCoordinate(node1)) + " " + new CoordinateXY(queryChain.getCoordinate(node1 + 1)));
+        envelope.setToNull();
+        envelope.expandToInclude(queryChain.getCoordinate(node1));
+        envelope.expandToInclude(queryChain.getCoordinate(node1 + 1));
+        envelope.expandBy(overlapTolerance);
+        for (SegmentSequencePackedRtree item : index.query(envelope)) {
+//          System.err.println("      testChain=" + item.getSegmentString());
+          if (item.getId() >= id) {
+            for (int node2 : item.query(envelope)) {
+//              System.err.println("        node2=" + node2 + " " + new CoordinateXY(item.getSegmentString().getCoordinate(node2)) + " " + new CoordinateXY(item.getSegmentString().getCoordinate(node2 + 1)));
+              segInt.processIntersections(queryChain, node1, item.getSegmentString(), node2);
+              // short-circuit if possible
+              if (segInt.isDone())
+                return;
+            }
+          }
+        }
+      }
+      id++;
+    }
+
+//    for (int i = 0; i < segmentStrings.size(); i++) {
+//      SegmentString queryChain = segmentStrings.get(i);
+//      for (int j = i; j < segmentStrings.size(); j++) {
+//        SegmentString testChain = segmentStrings.get(j);
+//        for (int node1 = 0; node1 < queryChain.size() - 1; node1++) {
+//          for (int node2 = 0; node2 < testChain.size() - 1; node2++) {
+//            segInt.processIntersections(queryChain, node1, testChain, node2);
+//            // short-circuit if possible
+//            if (segInt.isDone())
+//              return;
+//          }
+//        }
+//      }
+//    }
+//    intersectChains();
 //System.out.println("MCIndexNoder: # chain overlaps = " + nOverlaps);
   }
 
   private void intersectChains()
   {
-    MonotoneChainOverlapAction overlapAction = new SegmentOverlapAction(segInt);
 
-    for (Iterator i = monoChains.iterator(); i.hasNext(); ) {
-      MonotoneChain queryChain = (MonotoneChain) i.next();
-      Envelope queryEnv = queryChain.getEnvelope(overlapTolerance);
-      List overlapChains = index.query(queryEnv);
-      for (Iterator j = overlapChains.iterator(); j.hasNext(); ) {
-        MonotoneChain testChain = (MonotoneChain) j.next();
-        /**
-         * following test makes sure we only compare each pair of chains once
-         * and that we don't compare a chain to itself
-         */
-        if (testChain.getId() > queryChain.getId()) {
-          queryChain.computeOverlaps(testChain, overlapTolerance, overlapAction);
-          nOverlaps++;
+//    Envelope envelope = new Envelope();
+//    int id = 0;
+//    for (SegmentString queryChain : monoChains) {
+//      for (int node1 = 0; node1 < queryChain.size() - 1; node1++) {
+//        envelope.setToNull();
+//        envelope.expandToInclude(queryChain.getCoordinate(node1));
+//        envelope.expandToInclude(queryChain.getCoordinate(node1 + 1));
+//        for (SegmentSequencePackedRtree item : index.query(envelope)) {
+//          if (item.getId() > id) {
+//            for (int node2 : item.query(envelope)) {
+//              segInt.processIntersections(queryChain, node1, item.getSegmentString(), node2);
+//              nOverlaps++;
+//              // short-circuit if possible
+//              if (segInt.isDone())
+//                return;
+//            }
+//          }
+//        }
+//      }
+//      id++;
+//    }
+
+
+    for (int i = 0; i < segmentStrings.size(); i++) {
+      SegmentString queryChain = segmentStrings.get(i);
+      for (int j = i + 1; j < segmentStrings.size(); j++) {
+        SegmentString testChain = segmentStrings.get(j);
+        for (int node1 = 0; node1 < queryChain.size() - 1; node1++) {
+          for (int node2 = 0; node2 < testChain.size() - 1; node2++) {
+            segInt.processIntersections(queryChain, node1, testChain, node2);
+            // short-circuit if possible
+            if (segInt.isDone())
+              return;
+          }
         }
-        // short-circuit if possible
-        if (segInt.isDone())
-        	return;
       }
     }
   }
 
-  private void add(SegmentString segStr)
-  {
-    List segChains = MonotoneChainBuilder.getChains(segStr.getCoordinates(), segStr);
-    for (Iterator i = segChains.iterator(); i.hasNext(); ) {
-      MonotoneChain mc = (MonotoneChain) i.next();
-      mc.setId(idCounter++);
-      //mc.setOverlapDistance(overlapDistance);
-      index.insert(mc.getEnvelope(overlapTolerance), mc);
-      monoChains.add(mc);
-    }
-  }
-
-  public static class SegmentOverlapAction
-      extends MonotoneChainOverlapAction
-  {
-    private SegmentIntersector si = null;
-
-    public SegmentOverlapAction(SegmentIntersector si)
-    {
-      this.si = si;
-    }
-
-    public void overlap(MonotoneChain mc1, int start1, MonotoneChain mc2, int start2)
-    {
-      SegmentString ss1 = (SegmentString) mc1.getContext();
-      SegmentString ss2 = (SegmentString) mc2.getContext();
-      si.processIntersections(ss1, start1, ss2, start2);
-    }
-
-  }
+//  private void add(SegmentString segStr)
+//  {
+//    monoChains.add(segStr);
+//    Envelope env = new Envelope();
+//    for (Coordinate coord : segStr.getCoordinates()) {
+//      env.expandToInclude(coord);
+//    }
+//    env.expandBy(overlapTolerance);
+//    index.insert(env, new SegmentSequencePackedRtree(segStr, idCounter++));
+//  }
 }

@@ -30,7 +30,8 @@ public class SimpleNoder
 
   private Collection nodedSegStrings;
 
-  public SimpleNoder() {
+  public SimpleNoder(SegmentIntersector si) {
+    super(si);
   }
 
   public Collection getNodedSubstrings()

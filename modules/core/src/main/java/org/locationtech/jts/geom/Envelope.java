@@ -568,18 +568,18 @@ public class Envelope
   public boolean intersects(Coordinate a, Coordinate b) {
     if (isNull()) { return false; }
     
-    double envminx = (a.x < b.x) ? a.x : b.x;
+    double envminx = Math.min(a.x, b.x);
     if (envminx > maxx) return false;
     
-    double envmaxx = (a.x > b.x) ? a.x : b.x;
+    double envmaxx = Math.max(a.x, b.x);
     if (envmaxx < minx) return false;
     
-    double envminy = (a.y < b.y) ? a.y : b.y;
+    double envminy = Math.min(a.y, b.y);
     if (envminy > maxy) return false;
     
-    double envmaxy = (a.y > b.y) ? a.y : b.y;
+    double envmaxy = Math.max(a.y, b.y);
     if (envmaxy < miny) return false;
-    
+
     return true;
   }
   

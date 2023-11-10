@@ -15,6 +15,11 @@ import static org.locationtech.jts.operation.overlayng.OverlayNG.DIFFERENCE;
 import static org.locationtech.jts.operation.overlayng.OverlayNG.INTERSECTION;
 import static org.locationtech.jts.operation.overlayng.OverlayNG.UNION;
 
+import junit.framework.TestResult;
+import org.junit.Test;
+import org.junit.internal.runners.JUnit4ClassRunner;
+import org.junit.runner.RunWith;
+import org.junit.runners.AllTests;
 import org.locationtech.jts.geom.Geometry;
 import org.locationtech.jts.noding.Noder;
 import org.locationtech.jts.noding.ValidatingNoder;
@@ -29,13 +34,10 @@ import test.jts.GeometryTestCase;
  * @author mdavis
  *
  */
+@RunWith(JUnit4ClassRunner.class)
 public class OverlayNGSnappingNoderTest extends GeometryTestCase {
 
-  public static void main(String args[]) {
-    TestRunner.run(OverlayNGSnappingNoderTest.class);
-  }
-
-  public OverlayNGSnappingNoderTest(String name) { super(name); }
+  public OverlayNGSnappingNoderTest() { super("OverlayNGSnappingNoderTest"); }
   
   public void testRectanglesOneAjarUnion() {
     Geometry a = read("POLYGON ((10 10, 10 5, 5 5, 5 10, 10 10))");
@@ -64,11 +66,15 @@ public class OverlayNGSnappingNoderTest extends GeometryTestCase {
     Geometry expected = read("POLYGON ((150 200.01, 200 200.01, 260 200.01, 300 200, 200 0, 100 200, 150 200.01))");
     checkEqual(expected, union(a, b, 0.01));
   }
+
+  @Test
   public void testTrianglesBSegmentsDisplacedUnion() {
     Geometry a = read("POLYGON ((100 200, 200 0, 300 200, 100 200))");
     Geometry b = read("POLYGON ((150 200.01, 200 200.01, 260 200.01, 200 100, 150 200.01))");
     Geometry expected = read("POLYGON ((100 200, 150 200.01, 200 200.01, 260 200.01, 300 200, 200 0, 100 200))");
+//    System.err.println("==========");
     checkEqual(expected, union(a, b, 0.1));
+//    System.err.println("==========");
   }
   
   /**
